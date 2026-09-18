@@ -2,7 +2,7 @@
  * Public API: site content, live availability, bookings and inquiries.
  */
 import { db, mutate, newId, newBookingCode } from './db.js';
-import { availabilityFor, isValidRange, nightsBetween, occupiedOn, occupancyMap } from './availability.js';
+import { availabilityFor, isValidRange, nightsBetween, occupiedOn, occupancyMap, todayIso } from './availability.js';
 import { verifyTurnstile, rateLimit, turnstileEnabled, siteKey } from './turnstile.js';
 import { notify, buildGuestMessage, whatsappLink, money, nightsWord, emailConfigured } from './mail.js';
 import { sendJson, readBody, clientIp, badRequest, notFound, clean, isEmail, toInt } from './http.js';
@@ -10,8 +10,9 @@ import { sendJson, readBody, clientIp, badRequest, notFound, clean, isEmail, toI
 const MIN_FILL_SECONDS = 3;
 
 export function publicContent(data) {
+  const { adminPasswordHash: _private, ...settings } = data.settings;
   return {
-    settings: data.settings,
+    settings,
     roomTypes: [...data.roomTypes].sort((a, b) => a.sort - b.sort),
     menu: data.menu,
     reviews: data.reviews,
@@ -33,6 +34,12 @@ export async function handlePublic(req, res, url) {
     const guests = toInt(url.searchParams.get('guests'), 2);
     if (!isValidRange(checkIn, checkOut)) {
       return sendJson(res, 400, { error: 'Please choose a valid check-in and check-out date (max 30 nights).' });
+    }
+    if (checkIn < todayIso()) {
+      return sendJson(res, 400, { error: 'Check-in cannot be in the past.' });
+    }
+    if (guests < 1 || guests > 20) {
+      return sendJson(res, 400, { error: 'Guests must be between 1 and 20.' });
     }
     const data = await db();
     const nights = nightsBetween(checkIn, checkOut);
@@ -105,14 +112,12 @@ async function createBooking(req, res) {
   const capture = await verifyTurnstile(clean(body.turnstileToken, 2048), ip);
   if (!capture.ok) return sendJson(res, 400, { error: 'Verification failed. Please refresh the page and try again.' });
 
-  const data = await db();
   const roomTypeId = clean(body.roomTypeId, 40);
-  const roomType = data.roomTypes.find((r) => r.id === roomTypeId);
-  if (!roomType) return sendJson(res, 400, { error: 'Please choose a room type.' });
 
   const checkIn = clean(body.checkIn, 10);
   const checkOut = clean(body.checkOut, 10);
   if (!isValidRange(checkIn, checkOut)) return sendJson(res, 400, { error: 'Please choose valid dates (max 30 nights).' });
+  if (checkIn < todayIso()) return sendJson(res, 400, { error: 'Check-in cannot be in the past.' });
 
   const guests = Math.max(1, Math.min(toInt(body.guests, 2), 20));
   const name = clean(body.name, 120);
@@ -126,43 +131,54 @@ async function createBooking(req, res) {
     return sendJson(res, 400, { error: 'Please enter a phone or WhatsApp number we can reach you on.' });
   }
 
-  // Never trust the browser: re-check availability on the server.
-  const map = occupancyMap(data);
-  const nights = nightsBetween(checkIn, checkOut);
-  const full = nights.find((night) => occupiedOn(map, roomTypeId, night) >= roomType.rooms);
-  if (full) {
-    return sendJson(res, 409, {
-      error: `${roomType.name} is fully booked on ${full}. Please pick another room type or shift your dates.`,
-      conflictDate: full
-    });
-  }
-
   const now = new Date().toISOString();
-  const booking = {
-    id: newId(),
-    code: newBookingCode(),
-    roomTypeId,
-    roomTypeName: roomType.name,
-    checkIn,
-    checkOut,
-    nights: nights.length,
-    guests,
-    name,
-    email,
-    phone,
-    country,
-    notes,
-    rate: roomType.price,
-    total: roomType.price * nights.length,
-    status: 'pending',
-    source: 'website',
-    createdAt: now,
-    updatedAt: now
-  };
-
-  const summary = `${name} (${email}, ${phone}${country ? `, ${country}` : ''})\n${roomType.name}: ${checkIn} to ${checkOut} (${nightsWord(nights.length)}), ${guests} guest(s)\nTotal: ${money(booking.total, data.settings.currency)}\nNotes: ${notes || '-'}`;
-
+  let booking;
+  let roomType;
+  let settings;
+  let summary;
   await mutate((d) => {
+    const currentRoom = d.roomTypes.find((r) => r.id === roomTypeId);
+    if (!currentRoom) throw badRequest('Please choose a room type.');
+    if (guests > currentRoom.capacity) {
+      throw badRequest(`${currentRoom.name} allows up to ${currentRoom.capacity} guest(s).`);
+    }
+
+    const nights = nightsBetween(checkIn, checkOut);
+    const map = occupancyMap(d);
+    const full = nights.find((night) => occupiedOn(map, roomTypeId, night) >= currentRoom.rooms);
+    if (full) {
+      throw Object.assign(
+        new Error(`${currentRoom.name} is fully booked on ${full}. Please pick another room type or shift your dates.`),
+        { status: 409, conflictDate: full }
+      );
+    }
+
+    let code;
+    do code = newBookingCode(); while (d.bookings.some((item) => item.code === code));
+    roomType = { ...currentRoom };
+    settings = { ...d.settings };
+    booking = {
+      id: newId(),
+      code,
+      roomTypeId,
+      roomTypeName: roomType.name,
+      checkIn,
+      checkOut,
+      nights: nights.length,
+      guests,
+      name,
+      email,
+      phone,
+      country,
+      notes,
+      rate: roomType.price,
+      total: roomType.price * nights.length,
+      status: 'pending',
+      source: 'website',
+      createdAt: now,
+      updatedAt: now
+    };
+    summary = `${name} (${email}, ${phone}${country ? `, ${country}` : ''})\n${roomType.name}: ${checkIn} to ${checkOut} (${nightsWord(nights.length)}), ${guests} guest(s)\nTotal: ${money(booking.total, settings.currency)}\nNotes: ${notes || '-'}`;
     d.bookings.push(booking);
     d.notifications.push({
       id: booking.id,
@@ -174,22 +190,22 @@ async function createBooking(req, res) {
     });
   });
 
-  const guestMessage = buildGuestMessage(booking, roomType, data.settings);
+  const guestMessage = buildGuestMessage(booking, roomType, settings);
   const delivery = await notify({
     kind: 'booking',
     subject: `New booking ${booking.code} - ${roomType.name}, ${checkIn}`,
     text: summary,
     guestEmail: email,
-    ownerEmail: data.settings.ownerEmail
+    ownerEmail: settings.ownerEmail
   });
 
   return sendJson(res, 201, {
     ok: true,
     booking,
     guestMessage,
-    whatsappUrl: whatsappLink(data.settings.whatsapp, guestMessage),
+    whatsappUrl: whatsappLink(settings.whatsapp, guestMessage),
     ownerWhatsappUrl: whatsappLink(
-      data.settings.whatsapp,
+      settings.whatsapp,
       `New booking ${booking.code}: ${name}, ${roomType.name}, ${checkIn} to ${checkOut}, ${guests} guest(s). Phone: ${phone}`
     ),
     emailed: (delivery.emailed || []).filter((e) => e.to === email).some((e) => e.ok)

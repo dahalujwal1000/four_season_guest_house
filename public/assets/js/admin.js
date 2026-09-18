@@ -68,7 +68,7 @@
     });
 
     api('/api/admin/session').then(function (s) {
-      if (!s.authenticated) { showLogin(); if (s.usesDefaultPassword) $('#default-pw').hidden = false; return; }
+      if (!s.authenticated) { showLogin(); if (s.setupRequired) $('#default-pw').hidden = false; return; }
       showPanel();
       loadSettings().then(function () { loadTab('dash'); });
     }).catch(function () { showLogin(); });
@@ -79,7 +79,7 @@
       S.settings = d.settings;
       S.roomTypes = d.roomTypes;
       S.reviews = d.reviews;
-      S.menu = d.settings.menu || [];
+      S.menu = d.menu || [];
       S.counts = d;
       var opts = S.roomTypes.map(function (r) { return '<option value="' + esc(r.id) + '">' + esc(r.name) + '</option>'; }).join('');
       $('#bl-room').innerHTML = opts;
@@ -344,7 +344,7 @@ function renderContent() {
       '<h3 class="h3">Change admin password</h3>' +
       '<form id="pw-form" class="form-grid" style="max-width:640px;margin-top:16px">' +
         '<div class="field"><label for="pw-current">Current password</label><input id="pw-current" name="currentPassword" type="password" required></div>' +
-        '<div class="field"><label for="pw-new">New password</label><input id="pw-new" name="newPassword" type="password" minlength="6" required></div>' +
+        '<div class="field"><label for="pw-new">New password</label><input id="pw-new" name="newPassword" type="password" minlength="10" required></div>' +
         '<div class="span-2" style="display:flex;gap:12px;align-items:center">' +
         '<button class="btn btn--sm" type="submit">Update password</button>' +
         '<span class="notice notice--ok" id="pw-ok" hidden></span></div>' +

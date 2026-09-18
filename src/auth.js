@@ -38,26 +38,35 @@ function sign(value) {
   return createHmac('sha256', sessionSecret()).update(value).digest('hex');
 }
 
-export function createSessionCookie() {
+function authVersion(passwordHash) {
+  return sign(`password:${passwordHash || ''}`).slice(0, 24);
+}
+
+function cookieSecurity() {
+  return process.env.NODE_ENV === 'production' || process.env.COOKIE_SECURE === 'true' ? '; Secure' : '';
+}
+
+export function createSessionCookie(passwordHash) {
   const expires = Date.now() + SESSION_HOURS * 3600 * 1000;
-  const payload = String(expires);
+  const payload = `${expires}.${authVersion(passwordHash)}`;
   const token = `${payload}.${sign(payload)}`;
-  return `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_HOURS * 3600}`;
+  return `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_HOURS * 3600}${cookieSecurity()}`;
 }
 
 export function clearSessionCookie() {
-  return `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+  return `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${cookieSecurity()}`;
 }
 
-export function isAuthenticated(req) {
+export function isAuthenticated(req, passwordHash) {
   const raw = req.headers.cookie || '';
   const match = raw.split(';').map((c) => c.trim()).find((c) => c.startsWith(`${COOKIE}=`));
   if (!match) return false;
   const token = match.slice(COOKIE.length + 1);
-  const [payload, signature] = token.split('.');
-  if (!payload || !signature) return false;
+  const [expires, version, signature] = token.split('.');
+  if (!expires || !version || !signature) return false;
+  const payload = `${expires}.${version}`;
   const expected = sign(payload);
   if (signature.length !== expected.length) return false;
   if (!timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return false;
-  return Number(payload) > Date.now();
+  return version === authVersion(passwordHash) && Number(expires) > Date.now();
 }

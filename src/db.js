@@ -18,7 +18,8 @@ async function ensureLoaded() {
   try {
     const raw = await readFile(DB_FILE, 'utf8');
     cache = JSON.parse(raw);
-  } catch {
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
     cache = createSeed();
     await save();
   }
@@ -29,21 +30,30 @@ export async function db() {
   return ensureLoaded();
 }
 
+async function persist() {
+  const tmp = `${DB_FILE}.tmp`;
+  await writeFile(tmp, JSON.stringify(cache, null, 2), 'utf8');
+  await rename(tmp, DB_FILE);
+}
+
+function enqueue(operation) {
+  const queued = writeQueue.then(operation);
+  writeQueue = queued.catch(() => {});
+  return queued;
+}
+
 export async function save() {
-  writeQueue = writeQueue.then(async () => {
-    const tmp = `${DB_FILE}.tmp`;
-    await writeFile(tmp, JSON.stringify(cache, null, 2), 'utf8');
-    await rename(tmp, DB_FILE);
-  });
-  return writeQueue;
+  return enqueue(persist);
 }
 
 /** Read-modify-write helper: `await mutate(d => { d.bookings.push(x) })` */
 export async function mutate(fn) {
-  const data = await ensureLoaded();
-  const result = fn(data);
-  await save();
-  return result;
+  await ensureLoaded();
+  return enqueue(async () => {
+    const result = await fn(cache);
+    await persist();
+    return result;
+  });
 }
 
 export const paths = { DATA_DIR, DB_FILE };

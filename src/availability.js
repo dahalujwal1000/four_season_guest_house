@@ -4,8 +4,11 @@
  */
 
 export function toDate(value) {
-  const d = value instanceof Date ? value : new Date(`${String(value).slice(0, 10)}T00:00:00Z`);
-  return Number.isNaN(d.getTime()) ? null : d;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : new Date(value);
+  const raw = String(value || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  const d = new Date(`${raw}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === raw ? d : null;
 }
 
 export function iso(date) {
@@ -16,6 +19,15 @@ export function addDays(date, days) {
   const d = new Date(date);
   d.setUTCDate(d.getUTCDate() + days);
   return d;
+}
+
+export function todayIso() {
+  const parts = new Intl.DateTimeFormat('en', {
+    timeZone: process.env.BUSINESS_TIMEZONE || 'Asia/Kathmandu',
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date());
+  const get = (type) => parts.find((part) => part.type === type).value;
+  return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
 /** Inclusive list of nights between checkIn (inclusive) and checkOut (exclusive). */

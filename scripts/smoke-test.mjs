@@ -17,6 +17,7 @@ const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const PORT = 4599;
 const BASE = `http://127.0.0.1:${PORT}`;
 const WORK = mkdtempSync(path.join(tmpdir(), 'fs-smoke-'));
+const ADMIN_PASSWORD = 'smoke-admin-2026';
 
 let passed = 0;
 let failed = 0;
@@ -44,19 +45,24 @@ async function req(pathname, options = {}) {
   return { status: res.status, text, json, cookie: setCookie ? setCookie.split(';')[0] : null };
 }
 
-function send(method, pathname, body, cookie) {
+function send(method, pathname, body, cookie, extraHeaders = {}) {
   return req(pathname, {
     method,
-    headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) },
+    headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}), ...extraHeaders },
     body: body === undefined ? undefined : JSON.stringify(body)
   });
 }
-const post = (p, b, c) => send('POST', p, b, c);
+const post = (p, b, c, h) => send('POST', p, b, c, h);
 const put = (p, b, c) => send('PUT', p, b, c);
 const patch = (p, b, c) => send('PATCH', p, b, c);
 const del = (p, c) => req(p, { method: 'DELETE', headers: c ? { cookie: c } : {} });
 
 const fillAge = () => Date.now() - 10000;
+const dateAfter = (days) => {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+};
 
 function waitForServer(retries = 40) {
   return new Promise((resolve, reject) => {
@@ -77,6 +83,10 @@ async function run() {
   }
   const nowhere = await req('/this-page-does-not-exist');
   ok('GET unknown URL -> 404 page', nowhere.status === 404 && /trail leads nowhere/.test(nowhere.text));
+  const guideHtml = (await req('/guide')).text;
+  ok('guide content stays inside the HTML document', guideHtml.indexOf('Places near Chame') < guideHtml.indexOf('</html>'));
+  const adminHtml = (await req('/admin')).text;
+  ok('admin controls stay inside the HTML document', adminHtml.indexOf('id="logout"') < adminHtml.indexOf('</html>'));
 
   /* ------------------------------ content ------------------------------ */
   section('Content API');
@@ -90,8 +100,8 @@ async function run() {
 
   /* --------------------------- availability ---------------------------- */
   section('Availability');
-  const checkIn = '2026-10-10';
-  const checkOut = '2026-10-13';
+  const checkIn = dateAfter(30);
+  const checkOut = dateAfter(33);
   const avail = (await req(`/api/availability?checkIn=${checkIn}&checkOut=${checkOut}&guests=2`)).json;
   ok('3 nights counted', avail.nights === 3, `got ${avail.nights}`);
   ok('every room type reported', avail.rooms.length === 4);
@@ -99,6 +109,8 @@ async function run() {
   ok('dorm bed available for a solo trekker',
     (await req(`/api/availability?checkIn=${checkIn}&checkOut=${checkOut}&guests=1`)).json.rooms.find((r) => r.id === 'dorm').available === true);
   ok('reversed dates rejected with 400', (await req(`/api/availability?checkIn=${checkOut}&checkOut=${checkIn}`)).status === 400);
+  ok('impossible calendar dates rejected with 400', (await req('/api/availability?checkIn=2026-02-31&checkOut=2026-03-05')).status === 400);
+  ok('past stays rejected with 400', (await req(`/api/availability?checkIn=${dateAfter(-10)}&checkOut=${dateAfter(-8)}`)).status === 400);
 
   /* ----------------------------- booking ------------------------------- */
   section('Booking engine');
@@ -140,18 +152,36 @@ async function run() {
   });
   ok('a different room type is still bookable', otherType.status === 201);
 
+  const tooManyGuests = await post('/api/bookings', {
+    roomTypeId: 'twin', checkIn: dateAfter(40), checkOut: dateAfter(42), guests: 3,
+    name: 'Large Party', email: 'party@example.com', phone: '+9779800000010', formOpenedAt: fillAge()
+  }, undefined, { 'x-forwarded-for': '203.0.113.10' });
+  ok('room capacity enforced by booking API', tooManyGuests.status === 400);
+
+  const raceIn = dateAfter(70);
+  const raceOut = dateAfter(72);
+  const raceBody = {
+    roomTypeId: 'family', checkIn: raceIn, checkOut: raceOut, guests: 4,
+    name: 'Concurrent Guest', email: 'race@example.com', phone: '+9779800000011', formOpenedAt: fillAge()
+  };
+  const race = await Promise.all([
+    post('/api/bookings', raceBody, undefined, { 'x-forwarded-for': '203.0.113.11' }),
+    post('/api/bookings', { ...raceBody, email: 'race2@example.com' }, undefined, { 'x-forwarded-for': '203.0.113.12' })
+  ]);
+  ok('concurrent requests cannot overbook the final room', race.map((r) => r.status).sort().join(',') === '201,409');
+
   section('Spam protection');
   const honeypot = await post('/api/bookings', {
-    roomTypeId: 'twin', checkIn: '2026-11-01', checkOut: '2026-11-02',
+    roomTypeId: 'twin', checkIn: dateAfter(45), checkOut: dateAfter(46),
     name: 'Bot', email: 'bot@spam.com', website: 'http://spam.example', formOpenedAt: fillAge()
   });
   ok('honeypot answers silently with 202', honeypot.status === 202 && honeypot.json.silent === true);
   ok('form filled in under 3s rejected with 429', (await post('/api/bookings', {
-    roomTypeId: 'twin', checkIn: '2026-11-01', checkOut: '2026-11-02',
+    roomTypeId: 'twin', checkIn: dateAfter(45), checkOut: dateAfter(46),
     name: 'Speedy', email: 'fast@example.com', phone: '+9779800000005', formOpenedAt: Date.now()
   })).status === 429);
   ok('invalid email rejected with 400', (await post('/api/bookings', {
-    roomTypeId: 'twin', checkIn: '2026-11-01', checkOut: '2026-11-02',
+    roomTypeId: 'twin', checkIn: dateAfter(45), checkOut: dateAfter(46),
     name: 'No Mail', email: 'not-an-email', phone: '+9779800000006', formOpenedAt: fillAge()
   })).status === 400);
 
@@ -159,16 +189,17 @@ async function run() {
   section('Admin auth');
   ok('admin API locked without a session', (await req('/api/admin/overview')).status === 401);
   ok('wrong password -> 401', (await post('/api/admin/login', { password: 'definitely-wrong' })).status === 401);
-  const login = await post('/api/admin/login', { password: process.env.ADMIN_PASSWORD || 'fourseason' });
-  ok('default password signs in', login.status === 200 && login.json.ok === true, JSON.stringify(login.json));
+  const login = await post('/api/admin/login', { password: ADMIN_PASSWORD });
+  ok('configured initial password signs in', login.status === 200 && login.json.ok === true, JSON.stringify(login.json));
   ok('session cookie issued', Boolean(login.cookie));
   const cookie = login.cookie;
   ok('session reports authenticated', (await req('/api/admin/session', { headers: { cookie } })).json.authenticated === true);
   ok('admin data needs the session', (await req('/api/admin/bookings')).status === 401);
+  ok('password hash stays private after admin setup', !/adminPasswordHash/.test((await req('/api/content')).text));
 /* ---------------------------- admin panel ---------------------------- */
   section('Admin dashboard and bookings');
   const overview = (await req('/api/admin/overview', { headers: { cookie } })).json;
-  ok('overview counts pending bookings', overview.counters.pending === 3, `got ${overview.counters.pending}`);
+  ok('overview counts pending bookings', overview.counters.pending === 4, `got ${overview.counters.pending}`);
   ok('inventory total is 10 rooms', overview.counters.totalRooms === 10);
   ok('booked value tracked', overview.counters.bookedValue > 0);
   ok('next 7 nights grid returned', overview.next7.length === 7);
@@ -184,25 +215,36 @@ async function run() {
   ok('unknown status rejected', (await patch(`/api/admin/bookings/${booking.id}`, { status: 'nonsense' }, cookie)).status === 400);
 
   const walkIn = await post('/api/admin/bookings', {
-    roomTypeId: 'twin', checkIn: '2026-12-01', checkOut: '2026-12-03',
+    roomTypeId: 'twin', checkIn: dateAfter(60), checkOut: dateAfter(62),
     name: 'Walk-in Guest', phone: '+9779800000001', guests: 2, status: 'confirmed'
   }, cookie);
   ok('walk-in booking created', walkIn.status === 201 && walkIn.json.booking.source === 'admin', JSON.stringify(walkIn.json));
+  ok('walk-in capacity is enforced', (await post('/api/admin/bookings', {
+    roomTypeId: 'twin', checkIn: dateAfter(60), checkOut: dateAfter(62), guests: 3
+  }, cookie)).status === 400);
+  ok('walk-in status is validated', (await post('/api/admin/bookings', {
+    roomTypeId: 'twin', checkIn: dateAfter(60), checkOut: dateAfter(62), status: 'hidden'
+  }, cookie)).status === 400);
+  ok('admin cannot overbook a full room', (await post('/api/admin/bookings', {
+    roomTypeId: 'family', checkIn: raceIn, checkOut: raceOut, guests: 4, status: 'confirmed'
+  }, cookie)).status === 409);
 
   section('Admin calendar and blocks');
-  const cal = (await req('/api/admin/calendar?from=2026-10-08&days=8', { headers: { cookie } })).json;
+  const cal = (await req(`/api/admin/calendar?from=${dateAfter(28)}&days=8`, { headers: { cookie } })).json;
   ok('calendar returns every room type', cal.roomTypes.length === 4);
   ok('calendar shows 8 days per room', cal.roomTypes[0].cells.length === 8);
   const deluxeCell = cal.roomTypes.find((r) => r.id === 'deluxe').cells.find((c) => c.date === checkIn);
   ok('calendar marks the booked nights', deluxeCell.occupied === 2, `occupied ${deluxeCell.occupied}`);
   ok('calendar computes free rooms', deluxeCell.free === 0);
 
-  const block = await post('/api/admin/blocks', { roomTypeId: 'family', dateFrom: '2026-10-20', dateTo: '2026-10-22', reason: 'Maintenance' }, cookie);
+  const blockFrom = dateAfter(50);
+  const blockTo = dateAfter(52);
+  const block = await post('/api/admin/blocks', { roomTypeId: 'family', dateFrom: blockFrom, dateTo: blockTo, reason: 'Maintenance' }, cookie);
   ok('block created', block.status === 201);
-  const blocked = (await req('/api/availability?checkIn=2026-10-20&checkOut=2026-10-22&guests=3')).json.rooms.find((r) => r.id === 'family');
+  const blocked = (await req(`/api/availability?checkIn=${blockFrom}&checkOut=${blockTo}&guests=3`)).json.rooms.find((r) => r.id === 'family');
   ok('blocked family room shows as unavailable', blocked.available === false && blocked.minAvailable === 0);
   ok('block removed', (await del(`/api/admin/blocks/${block.json.block.id}`, cookie)).status === 200);
-  const freed = (await req('/api/availability?checkIn=2026-10-20&checkOut=2026-10-22&guests=3')).json.rooms.find((r) => r.id === 'family');
+  const freed = (await req(`/api/availability?checkIn=${blockFrom}&checkOut=${blockTo}&guests=3`)).json.rooms.find((r) => r.id === 'family');
   ok('family room free again after unblocking', freed.available === true);
   section('Admin content editing');
   const roomEdit = await put('/api/admin/rooms', { rooms: [{ id: 'twin', price: 1600, rooms: 6, capacity: 2, blurb: 'Updated blurb' }] }, cookie);
@@ -218,6 +260,7 @@ async function run() {
   const menu = await put('/api/admin/settings', { settings: { menu: [{ section: 'Smoke Section', items: [['Test Dish', 123, 'Only for the test']] }] } }, cookie);
   ok('menu saved', menu.status === 200 && menu.json.menu.length === 1);
   ok('new menu is public', (await req('/api/content')).json.menu[0].items[0][1] === 123);
+  ok('menu is returned to the admin editor', (await req('/api/admin/settings', { headers: { cookie } })).json.menu[0].section === 'Smoke Section');
 
   const reviews = await put('/api/admin/reviews', {
     reviews: [{ name: 'Anna K', country: 'Poland', rating: 5, text: 'Best hot shower on the circuit.', date: '2026-04-18' }]
@@ -240,21 +283,23 @@ async function run() {
   ok('inquiry deleted', (await del(`/api/admin/inquiries/${inquiries.inquiries[0].id}`, cookie)).status === 200);
   ok('log cleared', (await del('/api/admin/notifications', cookie)).status === 200);
 
-  const old = process.env.ADMIN_PASSWORD || 'fourseason';
+  const old = ADMIN_PASSWORD;
   ok('short new password rejected', (await post('/api/admin/password', { currentPassword: old, newPassword: 'abc' }, cookie)).status === 400);
-  ok('wrong current password rejected', (await post('/api/admin/password', { currentPassword: 'nope', newPassword: 'chame2026' }, cookie)).status === 400);
-  ok('password changed', (await post('/api/admin/password', { currentPassword: old, newPassword: 'chame2026' }, cookie)).status === 200);
+  ok('wrong current password rejected', (await post('/api/admin/password', { currentPassword: 'nope', newPassword: 'chame2026-safe' }, cookie)).status === 400);
+  ok('password changed', (await post('/api/admin/password', { currentPassword: old, newPassword: 'chame2026-safe' }, cookie)).status === 200);
   ok('old password no longer works', (await post('/api/admin/login', { password: old })).status === 401);
-  const relogin = await post('/api/admin/login', { password: 'chame2026' });
+  ok('password change invalidates old sessions', (await req('/api/admin/overview', { headers: { cookie } })).status === 401);
+  const relogin = await post('/api/admin/login', { password: 'chame2026-safe' });
   ok('new password works', relogin.status === 200 && relogin.json.ok === true);
   ok('no firstLogin flag on later logins', relogin.json.firstLogin === undefined);
-  ok('walk-in booking deleted', (await del(`/api/admin/bookings/${walkIn.json.booking.id}`, cookie)).status === 200);
-  ok('confirmed booking survives in the list', (await req('/api/admin/bookings?status=confirmed', { headers: { cookie } })).json.total >= 1);
+  const newCookie = relogin.cookie;
+  ok('walk-in booking deleted', (await del(`/api/admin/bookings/${walkIn.json.booking.id}`, newCookie)).status === 200);
+  ok('confirmed booking survives in the list', (await req('/api/admin/bookings?status=confirmed', { headers: { cookie: newCookie } })).json.total >= 1);
 }
 /* ------------------------------- runner -------------------------------- */
 const child = spawn(process.execPath, [path.join(ROOT, 'src', 'server.js')], {
   cwd: WORK,
-  env: { ...process.env, PORT: String(PORT), ADMIN_PASSWORD: process.env.ADMIN_PASSWORD || 'fourseason' },
+  env: { ...process.env, PORT: String(PORT), ADMIN_PASSWORD, TRUST_PROXY: 'true' },
   stdio: ['ignore', 'pipe', 'pipe']
 });
 child.stdout.resume();

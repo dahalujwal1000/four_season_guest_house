@@ -54,3 +54,7 @@ export function rateLimit(key, limit = 5, windowMinutes = 10) {
 export function resetRateLimits() {
   hits.clear();
 }
+
+export function resetRateLimit(key) {
+  hits.delete(key);
+}

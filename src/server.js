@@ -15,7 +15,6 @@ import { turnstileEnabled, siteKey } from './turnstile.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
 const PUBLIC_DIR = path.join(ROOT, 'public');
-const PORT = Number(process.env.PORT || 4173);
 
 /* --------------------------- tiny .env loader --------------------------- */
 function loadEnv() {
@@ -29,6 +28,7 @@ function loadEnv() {
   }
 }
 loadEnv();
+const PORT = Number(process.env.PORT || 4173);
 
 /* ------------------------------ static files ---------------------------- */
 const MIME = {
@@ -105,7 +105,10 @@ const server = http.createServer(async (req, res) => {
     if (status >= 500) console.error('[error]', err);
     if (res.headersSent) return;
     res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ error: err.message || 'Something went wrong' }));
+    res.end(JSON.stringify({
+      error: err.message || 'Something went wrong',
+      ...(err.conflictDate ? { conflictDate: err.conflictDate } : {})
+    }));
   }
 });
 

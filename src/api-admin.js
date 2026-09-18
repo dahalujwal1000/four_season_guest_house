@@ -2,13 +2,15 @@
  * Admin API - the whole back office for the lodge owner.
  * One password login, signed session cookie, no paid auth service.
  */
-import { db, mutate, newId } from './db.js';
-import { calendarGrid, isValidRange, nightsBetween, iso, toDate, addDays } from './availability.js';
+import { db, mutate, newId, newBookingCode } from './db.js';
+import { calendarGrid, isValidRange, nightsBetween, iso, toDate, addDays, occupancyMap, occupiedOn } from './availability.js';
 import { createSessionCookie, clearSessionCookie, isAuthenticated, hashPassword, verifyPassword } from './auth.js';
 import { emailConfigured } from './mail.js';
-import { sendJson, readBody, unauthorized, notFound, badRequest, clean, toInt, isEmail } from './http.js';
+import { rateLimit, resetRateLimit } from './turnstile.js';
+import { sendJson, readBody, clientIp, unauthorized, notFound, badRequest, clean, toInt, isEmail } from './http.js';
 
-const DEFAULT_PASSWORD = () => process.env.ADMIN_PASSWORD || 'fourseason';
+const BOOKING_STATUSES = ['pending', 'confirmed', 'checked-in', 'checked-out', 'cancelled'];
+const ACTIVE_STATUSES = new Set(['pending', 'confirmed', 'checked-in']);
 
 /* ------------------------------- overview ------------------------------- */
 
@@ -59,18 +61,33 @@ async function login(req, res) {
   const data = await db();
   const password = clean(body.password, 200);
   if (!password) return sendJson(res, 400, { error: 'Please enter the password.' });
+  const limitKey = `admin-login:${clientIp(req)}`;
+  const limit = rateLimit(limitKey, 5, 15);
+  if (!limit.ok) {
+    return sendJson(res, 429, { error: `Too many login attempts. Try again in about ${limit.retryAfterMinutes} minute(s).` });
+  }
 
   const stored = data.settings.adminPasswordHash;
   if (!stored) {
-    // First ever login: accept ADMIN_PASSWORD (or the built-in default) and store its hash.
-    if (password !== DEFAULT_PASSWORD()) return sendJson(res, 401, { error: 'Wrong password.' });
+    const initialPassword = process.env.ADMIN_PASSWORD;
+    if (!initialPassword) {
+      return sendJson(res, 503, { error: 'Admin login is not configured. Set ADMIN_PASSWORD in .env and restart the server.' });
+    }
+    if (initialPassword.length < 10) {
+      return sendJson(res, 503, { error: 'ADMIN_PASSWORD must contain at least 10 characters.' });
+    }
+    if (password !== initialPassword) return sendJson(res, 401, { error: 'Wrong password.' });
+    let passwordHash;
     await mutate((d) => {
-      d.settings.adminPasswordHash = hashPassword(password);
+      passwordHash = hashPassword(password);
+      d.settings.adminPasswordHash = passwordHash;
     });
-    return sendJson(res, 200, { ok: true, firstLogin: true }, { 'set-cookie': createSessionCookie() });
+    resetRateLimit(limitKey);
+    return sendJson(res, 200, { ok: true, firstLogin: true }, { 'set-cookie': createSessionCookie(passwordHash) });
   }
   if (!verifyPassword(password, stored)) return sendJson(res, 401, { error: 'Wrong password.' });
-  return sendJson(res, 200, { ok: true }, { 'set-cookie': createSessionCookie() });
+  resetRateLimit(limitKey);
+  return sendJson(res, 200, { ok: true }, { 'set-cookie': createSessionCookie(stored) });
 }
 
 /* -------------------------------- router -------------------------------- */
@@ -85,13 +102,13 @@ export async function handleAdmin(req, res, url) {
   if (pathname === '/api/admin/session' && req.method === 'GET') {
     const data = await db();
     return sendJson(res, 200, {
-      authenticated: isAuthenticated(req),
-      usesDefaultPassword: !data.settings.adminPasswordHash
+      authenticated: isAuthenticated(req, data.settings.adminPasswordHash),
+      setupRequired: !data.settings.adminPasswordHash
     });
   }
 
-  if (!isAuthenticated(req)) throw unauthorized('Please sign in again.');
   const data = await db();
+  if (!isAuthenticated(req, data.settings.adminPasswordHash)) throw unauthorized('Please sign in again.');
 
   if (pathname === '/api/admin/overview' && req.method === 'GET') {
     return sendJson(res, 200, overview(data));
@@ -112,40 +129,64 @@ export async function handleAdmin(req, res, url) {
 
   if (pathname === '/api/admin/bookings' && req.method === 'POST') {
     const body = await readBody(req);
-    const roomType = data.roomTypes.find((r) => r.id === clean(body.roomTypeId, 40));
-    if (!roomType) throw notFound('Unknown room type.');
+    const roomTypeId = clean(body.roomTypeId, 40);
     const checkIn = clean(body.checkIn, 10);
     const checkOut = clean(body.checkOut, 10);
     if (!isValidRange(checkIn, checkOut)) throw badRequest('Choose valid dates for the walk-in booking.');
     const nights = nightsBetween(checkIn, checkOut).length;
-    const rate = toInt(body.rate, roomType.price);
-    const booking = {
-      id: newId(),
-      code: clean(body.code, 20).toUpperCase() || `FS-WALK${Math.floor(Math.random() * 900 + 100)}`,
-      roomTypeId: roomType.id,
-      roomTypeName: roomType.name,
-      checkIn,
-      checkOut,
-      nights,
-      guests: Math.max(1, toInt(body.guests, 2)),
-      name: clean(body.name, 120) || 'Walk-in guest',
-      email: clean(body.email, 160),
-      phone: clean(body.phone, 40),
-      country: clean(body.country, 80),
-      notes: clean(body.notes, 1000),
-      rate,
-      total: rate * nights,
-      status: clean(body.status, 20) || 'confirmed',
-      source: 'admin',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    await mutate((d) => d.bookings.push(booking));
+    const status = clean(body.status, 20) || 'confirmed';
+    if (!BOOKING_STATUSES.includes(status)) throw badRequest('Unknown status.');
+    const guests = Math.max(1, toInt(body.guests, 2));
+    const requestedCode = clean(body.code, 20).toUpperCase();
+    let booking;
+    await mutate((d) => {
+      const roomType = d.roomTypes.find((r) => r.id === roomTypeId);
+      if (!roomType) throw notFound('Unknown room type.');
+      if (guests > roomType.capacity) throw badRequest(`${roomType.name} allows up to ${roomType.capacity} guest(s).`);
+      if (ACTIVE_STATUSES.has(status)) {
+        const map = occupancyMap(d);
+        const full = nightsBetween(checkIn, checkOut).find(
+          (night) => occupiedOn(map, roomType.id, night) >= roomType.rooms
+        );
+        if (full) {
+          throw Object.assign(new Error(`${roomType.name} is fully booked on ${full}.`), { status: 409, conflictDate: full });
+        }
+      }
+      if (requestedCode && d.bookings.some((item) => item.code === requestedCode)) {
+        throw badRequest('That booking reference is already in use.');
+      }
+      let code = requestedCode;
+      if (!code) {
+        do code = newBookingCode(); while (d.bookings.some((item) => item.code === code));
+      }
+      const rate = Math.max(0, toInt(body.rate, roomType.price));
+      booking = {
+        id: newId(),
+        code,
+        roomTypeId: roomType.id,
+        roomTypeName: roomType.name,
+        checkIn,
+        checkOut,
+        nights,
+        guests,
+        name: clean(body.name, 120) || 'Walk-in guest',
+        email: clean(body.email, 160),
+        phone: clean(body.phone, 40),
+        country: clean(body.country, 80),
+        notes: clean(body.notes, 1000),
+        rate,
+        total: rate * nights,
+        status,
+        source: 'admin',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      d.bookings.push(booking);
+    });
     return sendJson(res, 201, { ok: true, booking });
   }
 async function handleBookingAction(req, res, url, data) {
   const { pathname } = url;
-  const statuses = ['pending', 'confirmed', 'checked-in', 'checked-out', 'cancelled'];
 
   const bookingRoute = pathname.match(/^\/api\/admin\/bookings\/([\w-]+)$/);
   if (bookingRoute) {
@@ -155,7 +196,7 @@ async function handleBookingAction(req, res, url, data) {
 
     if (req.method === 'PATCH') {
       const body = await readBody(req);
-      if (body.status && !statuses.includes(body.status)) throw badRequest('Unknown status.');
+      if (body.status && !BOOKING_STATUSES.includes(body.status)) throw badRequest('Unknown status.');
       await mutate((d) => {
         const target = d.bookings.find((b) => b.id === id);
         if (body.status) target.status = body.status;
@@ -246,6 +287,7 @@ async function handleSettings(req, res, url, data) {
     return sendJson(res, 200, {
       settings: data.settings,
       roomTypes: data.roomTypes,
+      menu: data.menu,
       reviews: data.reviews,
       notificationCount: (data.notifications || []).length,
       inquiryCount: (data.inquiries || []).length,
@@ -299,7 +341,7 @@ async function handleSettings(req, res, url, data) {
     const current = clean(body.currentPassword, 200);
     const next = clean(body.newPassword, 200);
     if (!verifyPassword(current, data.settings.adminPasswordHash)) throw badRequest('Current password is wrong.');
-    if (next.length < 6) throw badRequest('New password must be at least 6 characters.');
+    if (next.length < 10) throw badRequest('New password must be at least 10 characters.');
     await mutate((d) => {
       d.settings.adminPasswordHash = hashPassword(next);
     });

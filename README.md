@@ -11,7 +11,7 @@ npm start
 
 Open http://localhost:4173
 
-On first start the server creates `data/fourseason.db` (SQLite) and seeds it
+On first start the server creates `data/db.json` and seeds it
 with the 10 rooms, the restaurant menu, rooms/facilities/gallery content and a
 sample review. To start over, stop the server and delete the `data` folder.
 
@@ -21,7 +21,7 @@ sample review. To start over, stop the server and delete the `data` folder.
 npm test
 ```
 
-Runs the full smoke test (87 checks) against a temporary server and database:
+Runs the full smoke test (99 checks) against a temporary server and datastore:
 site pages, API, booking flow, availability calendar, admin auth + every admin
 endpoint. It cleans up after itself and never touches `data/`.
 
@@ -37,7 +37,7 @@ endpoint. It cleans up after itself and never touches `data/`.
 | `src/server.js` | Static file server + API routing + .env loading |
 | `src/api-public.js` | Rooms, availability, bookings, inquiries, reviews, content |
 | `src/api-admin.js` | Admin: login, bookings, calendar, rooms, menu, content, messages |
-| `src/db.js` | SQLite via `node:sqlite` (built into Node 22+) |
+| `src/db.js` | Atomic, serialized JSON datastore |
 | `src/availability.js` | Nightly room-count availability engine |
 | `src/turnstile.js` | Cloudflare Turnstile verify + honeypot/time-trap/rate-limit |
 | `src/mail.js` | Email via Resend API (optional) + notification log |
@@ -46,14 +46,19 @@ endpoint. It cleans up after itself and never touches `data/`.
 
 ## Requirements
 
-- Node.js 22.5+ (uses the built-in `node:sqlite` module — no npm install)
+- Node.js 20+
 - No build step, no dependencies
 
-## Configure (all optional)
+## Configure
 
-Copy `.env.example` to `.env` and fill in what you want:
+Copy `.env.example` to `.env` before the first admin login.
 
-- `ADMIN_PASSWORD` — admin panel login (default `change-me-now`, change it!)
+- `ADMIN_PASSWORD` — required for the first admin login; use at least 10 characters
+- `SESSION_SECRET` — recommended in production so sessions survive clean deployments
+- `PORT` — HTTP port, default `4173`
+- `BUSINESS_TIMEZONE` — booking date timezone, default `Asia/Kathmandu`
+- `COOKIE_SECURE=true` — send admin cookies only over HTTPS
+- `TRUST_PROXY=true` — use forwarded client IPs when deployed behind a trusted proxy
 - `RESEND_API_KEY` + `MAIL_FROM` — booking confirmation emails (free tier,
   100/day). Without it bookings still work; owner gets WhatsApp + log entries.
 - `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY` — free spam protection from
@@ -75,12 +80,12 @@ Go to http://localhost:4173/admin and log in with `ADMIN_PASSWORD`.
 
 ## Where things live
 
-- Database file: `data/fourseason.db`
+- Datastore file: `data/db.json`
 - Email/notification log: `data/notifications.log`
-- Uploaded photos (via admin): `public/images/uploads/`
+- Website photos: `public/images/`
 
 ## Going live
 
-Any Node 22+ host works (VPS, Railway, Render, Fly.io). Set the env vars from
-`.env.example` in the host dashboard, point the domain, done. For real photos,
-upload them in the admin panel or drop files into `public/images/`.
+Any Node 20+ host works (VPS, Railway, Render, Fly.io). Set the env vars from
+`.env.example` in the host dashboard and point the domain. Replace the sample
+photos in `public/images/` with real lodge photos before launch.
