@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Book a Room - Four Seasons Guest House, Chame</title>
+<meta name="description" content="Check live availability and request a room at Four Seasons Guest House in Chame. No prepayment - pay in cash at the lodge. Instant booking reference and WhatsApp confirmation.">
+<link rel="canonical" href="/booking">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/assets/css/styles.css">
+</head>
+<body data-page="booking">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<section class="section section--tight">
+  <div class="wrap">
+    <span class="eyebrow">Booking</span>
+    <h1 class="h1" style="margin-top:14px">Check availability and request your room</h1>
+    <p class="lede" style="margin-top:20px">Two steps: pick your dates to see what is free, then send your details. You get a booking reference straight away and we confirm on WhatsApp or email. Cash on arrival, no prepayment.</p>
+    <div class="steps" style="margin-top:28px">
+      <div class="step is-active"><span>1</span> Dates &amp; guests</div>
+      <div class="step"><span>2</span> Choose room</div>
+      <div class="step"><span>3</span> Your details</div>
+    </div>
+  </div>
+</section>
+
+<main id="main">
+  <section class="section section--tight">
+    <div class="wrap">
+      <form id="book-form" novalidate>
+        <input type="hidden" name="roomTypeId">
+        <div class="form-grid">
+          <div class="field"><label for="checkIn">Check-in</label><input id="checkIn" type="date" name="checkIn" required></div>
+          <div class="field"><label for="checkOut">Check-out</label><input id="checkOut" type="date" name="checkOut" required></div>
+          <div class="field"><label for="guests">Guests</label>
+            <select id="guests" name="guests">
+              <option value="1">1 guest</option><option value="2" selected>2 guests</option>
+              <option value="3">3 guests</option><option value="4">4 guests</option>
+              <option value="5">5 guests</option><option value="6">6 guests</option>
+            </select>
+          </div>
+          <div class="field" style="justify-content:flex-end">
+            <label>&nbsp;</label>
+            <button class="btn btn--accent" type="button" id="date-step">Check availability</button>
+          </div>
+        </div>
+        <p class="field__error" id="date-error" role="alert"></p>
+
+        <div id="book-results" aria-live="polite"></div>
+
+        <div id="details-panel" hidden style="margin-top:44px">
+          <div class="split">
+            <div>
+              <h2 class="h3" style="margin-bottom:20px">Your details</h2>
+              <div class="form-grid">
+                <div class="field"><label for="name">Full name</label><input id="name" name="name" autocomplete="name" required></div>
+                <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email" required></div>
+                <div class="field"><label for="phone">Phone / WhatsApp</label><input id="phone" name="phone" autocomplete="tel" placeholder="+977 ..." required></div>
+                <div class="field"><label for="country">Country</label><input id="country" name="country" autocomplete="country-name"></div>
+                <div class="field span-2"><label for="notes">Anything we should know?</label><textarea id="notes" name="notes" placeholder="Late arrival, extra blankets, packed lunch for the trail..."></textarea></div>
+              </div>
+            </div>
+            <div>
+              <div class="summary">
+                <div class="summary__row"><span>Room</span><strong id="sum-room">-</strong></div>
+                <div class="summary__row"><span>Dates</span><strong id="sum-dates">-</strong></div>
+                <div class="summary__row"><span>Guests</span><strong id="sum-guests">-</strong></div>
+                <div class="summary__total"><span>Estimated total</span><span id="sum-total">-</span></div>
+                <p class="tiny" style="margin-top:14px">Pay in cash when you arrive. Free cancellation up to 24 hours before check-in.</p>
+                <div id="ts-slot" style="margin-top:16px"></div>
+                <p class="field__error" id="book-error" role="alert"></p>
+                <button class="btn btn--accent btn--block" type="submit" style="margin-top:12px">Send booking request</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="position:absolute;left:-9999px" aria-hidden="true">
+          <label for="website">Website</label>
+          <input id="website" name="website" tabindex="-1" autocomplete="off">
+        </div>
+      </form>
+
+      <div id="booking-success" hidden style="max-width:720px;margin:0 auto;text-align:center">
+        <div class="notice notice--ok" style="padding:26px">
+          <h2 class="h2" style="font-size:1.5rem">Request received. Namaste!</h2>
+          <p style="margin:14px 0 6px">Your booking reference is</p>
+          <p style="font-size:34px;font-weight:700;letter-spacing:.06em;margin:0" id="bk-code">-</p>
+          <p class="muted" id="bk-summary" style="margin:16px 0 20px">-</p>
+          <p class="small" style="margin:0">We will confirm on WhatsApp or email shortly. Keep this reference handy.</p>
+        </div>
+        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:24px">
+          <a class="btn btn--wa" id="bk-whatsapp" target="_blank" rel="noopener" hidden>Confirm faster on WhatsApp</a>
+          <a class="btn btn--ghost" href="/">Back to home</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="/assets/js/app.js" defer></script>
+</body>
+</html>

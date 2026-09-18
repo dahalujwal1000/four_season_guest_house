@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin - Four Seasons Guest House</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/assets/css/styles.css">
+<style>
+  .admin-top { background: var(--bg-ink); color:#fff; padding: 18px 0; }
+  .admin-top .wrap { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  .admin-tabs { display:flex; gap:6px; flex-wrap:wrap; border-bottom:1px solid var(--line); margin-bottom:34px; }
+  .admin-tabs button { background:none; border:0; padding:12px 14px; font-size:14.5px; color:var(--ink-soft); border-bottom:2px solid transparent; }
+  .admin-tabs button.is-active { color:var(--ink); font-weight:600; border-bottom-color:var(--accent); }
+  .panel { display:none; }
+  .panel.is-active { display:block; }
+  .kpi { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:16px; }
+  .kpi__card { border:1px solid var(--line); border-radius:var(--radius); padding:20px; background:#fff; }
+  .kpi__num { font-size:30px; font-weight:600; letter-spacing:-.03em; }
+  .kpi__label { font-size:12.5px; color:var(--ink-mute); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th { text-align:left; font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-mute); padding:10px 12px; border-bottom:1px solid var(--line-strong); }
+  td { padding:12px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  tr:last-child td { border-bottom:0; }
+  .table-wrap { border:1px solid var(--line); border-radius:var(--radius); overflow:auto; background:#fff; }
+  .pill { display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:550; }
+  .pill--pending { background:#fff8ec; color:#8a6115; }
+  .pill--confirmed { background:#eef4f9; color:#123f60; }
+  .pill--checked-in { background:#effaf3; color:#1d6b3f; }
+  .pill--checked-out { background:#f4f4f5; color:#52525b; }
+  .pill--cancelled { background:#fdf0ee; color:#a3352a; }
+  .cal { border-collapse:separate; border-spacing:3px; font-size:12px; }
+  .cal th { border:0; padding:4px; font-size:10.5px; text-align:center; }
+  .cal td { border:0; padding:0; }
+  .cal .cell { width:34px; height:30px; border-radius:6px; display:grid; place-items:center; background:#effaf3; color:#1d6b3f; }
+  .cal .cell--part { background:#fff8ec; color:#8a6115; }
+  .cal .cell--full { background:#fdf0ee; color:#a3352a; }
+  .cal .cell--past { background:#f4f4f5; color:#a1a1aa; }
+  .row-actions { display:flex; gap:6px; flex-wrap:wrap; }
+  .mini { padding:6px 11px; font-size:12.5px; border-radius:8px; border:1px solid var(--line-strong); background:#fff; }
+  .mini--ok { border-color:#b7e4c7; color:#1d6b3f; }
+  .mini--warn { border-color:#f0d9ab; color:#8a6115; }
+  .mini--err { border-color:#f2c4bc; color:#a3352a; }
+  .admin-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:32px; }
+  @media (max-width:900px){ .admin-grid2 { grid-template-columns:1fr; } }
+</style>
+</head>
+<body data-page="admin">
+
+<div class="admin-top">
+  <div class="wrap">
+    <div><strong>Four Seasons</strong> <span class="tiny" style="color:rgba(255,255,255,.6)">Admin panel</span></div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <a class="btn btn--sm btn--light" href="/" target="_blank" rel="noopener">View website</a>
+
+<main id="main" class="wrap" style="padding-top:34px;padding-bottom:80px">
+
+  <section id="login-view" hidden style="max-width:400px;margin:60px auto">
+    <div class="card" style="padding:30px">
+      <h1 class="h3">Sign in</h1>
+      <p class="small muted">Enter the admin password to manage bookings, rooms and content.</p>
+      <form id="login-form">
+        <div class="field"><label for="pw">Password</label><input id="pw" type="password" name="password" autocomplete="current-password" required></div>
+        <p class="notice notice--warn" id="default-pw" hidden style="margin-top:14px">No password has been set yet. Sign in with <code>fourseason</code>, then change it in the Content tab.</p>
+        <p class="field__error" id="login-error" role="alert"></p>
+        <button class="btn btn--accent btn--block" type="submit" style="margin-top:14px">Sign in</button>
+      </form>
+    </div>
+  </section>
+
+  <section id="panel" hidden>
+    <nav class="admin-tabs" id="tabs">
+      <button data-tab="dash" class="is-active">Dashboard</button>
+      <button data-tab="bookings">Bookings</button>
+      <button data-tab="calendar">Calendar</button>
+      <button data-tab="rooms">Rooms &amp; prices</button>
+      <button data-tab="content">Content</button>
+      <button data-tab="menu">Menu</button>
+      <button data-tab="reviews">Reviews</button>
+      <button data-tab="messages">Messages</button>
+      <button data-tab="notifications">Log</button>
+    </nav>
+
+    <div class="panel is-active" id="tab-dash"></div>
+
+    <div class="panel" id="tab-bookings">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">
+        <select id="b-status" class="mini">
+          <option value="all">All statuses</option><option value="pending">Pending</option>
+          <option value="confirmed">Confirmed</option><option value="checked-in">Checked in</option>
+          <option value="checked-out">Checked out</option><option value="cancelled">Cancelled</option>
+        </select>
+        <input id="b-search" class="mini" placeholder="Search name, code, phone" style="min-width:220px">
+        <button class="mini" id="b-add">Add walk-in booking</button>
+        <button class="mini" id="b-refresh">Refresh</button>
+      </div>
+      <div id="b-walkin"></div>
+      <div class="table-wrap">
+        <table id="b-table">
+          <thead><tr><th>Reference</th><th>Guest</th><th>Room</th><th>Dates</th><th>Total</th><th>Status</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel" id="tab-calendar">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:20px">
+        <label class="tiny" for="cal-from">From</label><input id="cal-from" type="date" class="mini">
+        <button class="mini" id="cal-30">30 days</button><button class="mini" id="cal-60">60 days</button>
+        <span class="tiny">Green = free &middot; Amber = partly booked &middot; Red = full</span>
+      </div>
+      <div id="cal-grid" style="overflow:auto"></div>
+      <hr class="rule" style="margin:36px 0">
+      <div class="admin-grid2">
+        <div>
+          <h3 class="h3">Block dates</h3>
+          <p class="small muted">Hold rooms for maintenance, family or an offline booking.</p>
+          <form id="block-form" class="form-grid" style="grid-template-columns:1fr 1fr">
+            <div class="field span-2"><label for="bl-room">Room type</label><select id="bl-room" name="roomTypeId"></select></div>
+            <div class="field"><label for="bl-from">From</label><input id="bl-from" name="dateFrom" type="date" required></div>
+            <div class="field"><label for="bl-to">To</label><input id="bl-to" name="dateTo" type="date" required></div>
+            <div class="field span-2"><label for="bl-reason">Reason</label><input id="bl-reason" name="reason" placeholder="Maintenance, owner use..."></div>
+            <div class="span-2"><button class="btn btn--accent btn--sm" type="submit">Block these dates</button></div>
+          </form>
+        </div>
+        <div>
+          <h3 class="h3">Current blocks</h3>
+          <div id="block-list" style="margin-top:14px"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="tab-rooms"></div>
+    <div class="panel" id="tab-content"></div>
+    <div class="panel" id="tab-menu"></div>
+    <div class="panel" id="tab-reviews"></div>
+    <div class="panel" id="tab-messages"></div>
+    <div class="panel" id="tab-notifications"></div>
+  </section>
+</main>
+
+<script src="/assets/js/admin.js" defer></script>
+</body>
+</html>
+
+      <button class="btn btn--sm btn--ghost" style="color:#fff;border-color:rgba(255,255,255,.4)" id="logout" hidden>Sign out</button>
+    </div>
+  </div>
+</div>

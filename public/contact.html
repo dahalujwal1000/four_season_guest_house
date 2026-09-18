@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contact &amp; Location - Four Seasons Guest House, Chame, Manang</title>
+<meta name="description" content="Find Four Seasons Guest House in Chame, Manang (plus code G6XW+X7V). Phone and WhatsApp, how to reach us from Besisahar, and a message form for trekking questions.">
+<link rel="canonical" href="/contact">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/assets/css/styles.css">
+</head>
+<body data-page="contact">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<section class="section section--tight">
+  <div class="wrap">
+    <span class="eyebrow">Contact &amp; location</span>
+    <h1 class="h1" style="margin-top:14px">Find us in Chame village</h1>
+    <p class="lede" style="margin-top:20px">We sit in the main village of Chame on the Annapurna Circuit, a short walk from the checkpost and the jeep stand. Look for the yellow and blue lodge with the FOUR SEASONS sign.</p>
+  </div>
+</section>
+
+<main id="main">
+  <section class="section section--tight">
+    <div class="wrap">
+      <div class="grid grid--4">
+        <div class="stat"><div class="stat__label">Phone</div><div class="stat__num" style="font-size:17px" data-c="phone"></div></div>
+        <div class="stat"><div class="stat__label">Email</div><div class="stat__num" style="font-size:17px" data-c="email"></div></div>
+        <div class="stat"><div class="stat__label">Plus code</div><div class="stat__num" style="font-size:17px" data-c="plusCode"></div></div>
+        <div class="stat"><div class="stat__label">Altitude</div><div class="stat__num" style="font-size:17px" data-c="altitude"></div></div>
+      </div>
+      <p class="tiny" style="margin-top:18px" data-c="address"></p>
+    </div>
+  </section>
+
+  <section class="section section--tight">
+    <div class="wrap">
+      <div class="map-frame">
+        <iframe title="Four Seasons Guest House location on Google Maps" src="https://maps.google.com/maps?q=Four%20Seasons%20Guest%20House%20Chame%20Manang&z=14&output=embed" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+      </div>
+      <p style="margin-top:16px"><a class="btn btn--ghost btn--sm" data-c-maps href="#" target="_blank" rel="noopener">Open in Google Maps</a></p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap split">
+      <div>
+        <span class="eyebrow">Getting here</span>
+        <h2 class="h2" style="margin-top:16px">From Kathmandu to Chame</h2>
+        <ul class="timeline" style="margin-top:26px">
+          <li><strong>Kathmandu → Besisahar</strong><br><span class="muted">Tourist bus or local bus, six to seven hours on the Prithvi Highway.</span></li>
+          <li><strong>Besisahar → Chame</strong><br><span class="muted">Shared jeep, about eight bumpy hours on the mountain road. Leave early - the road closes after dark.</span></li>
+          <li><strong>On foot</strong><br><span class="muted">Trekking in, it is two to three days from Besisahar via Bhulbhule, Jagat and Danaque.</span></li>
+        </ul>
+        <p class="muted" style="margin-top:22px">Tell us your arrival day and we will keep a room and a hot dinner waiting, even if the jeep is late.</p>
+      </div>
+      <div>
+        <img src="/images/mountain-village.jpg" alt="Chame village with prayer flags" loading="lazy" style="border-radius:var(--radius);border:1px solid var(--line)">
+      </div>
+    </div>
+  </section>
+
+  <section class="section section--soft">
+    <div class="wrap split">
+      <div>
+        <span class="eyebrow">Message us</span>
+        <h2 class="h2" style="margin-top:16px">Questions about the trek?</h2>
+        <p class="muted">Ask about room availability, the weather, luggage storage or anything else. We usually reply within a day - faster on WhatsApp.</p>
+      </div>
+      <div>
+        <form id="contact-form" novalidate>
+          <div class="form-grid">
+            <div class="field"><label for="c-name">Name</label><input id="c-name" name="name" autocomplete="name" required></div>
+            <div class="field"><label for="c-email">Email</label><input id="c-email" name="email" type="email" autocomplete="email" required></div>
+            <div class="field"><label for="c-phone">Phone (optional)</label><input id="c-phone" name="phone" autocomplete="tel"></div>
+            <div class="field span-2"><label for="c-message">Message</label><textarea id="c-message" name="message" required placeholder="We are two trekkers arriving on 12 October..."></textarea></div>
+          </div>
+          <div style="position:absolute;left:-9999px" aria-hidden="true">
+            <label for="c-website">Website</label>
+            <input id="c-website" name="website" tabindex="-1" autocomplete="off">
+          </div>
+          <div id="ts-slot-contact" style="margin-top:16px"></div>
+          <p class="notice notice--ok" id="contact-ok" role="status" hidden style="margin-top:16px"></p>
+          <p class="field__error" id="contact-err" role="alert"></p>
+          <button class="btn btn--accent" type="submit" style="margin-top:16px">Send message</button>
+        </form>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="/assets/js/app.js" defer></script>
+</body>
+</html>

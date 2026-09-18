@@ -1,0 +1,16 @@
+{
+  "name": "four-seasons-guest-house",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Website, booking engine and admin panel for Four Seasons Guest House & Restaurant, Chame, Manang, Nepal",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "images": "node scripts/fetch-images.mjs",
+    "test": "node scripts/smoke-test.mjs"
+  },
+  "engines": {
+    "node": ">=18.17"
+  }
+}
